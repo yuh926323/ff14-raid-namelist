@@ -51,9 +51,10 @@ nano .env
 ```bash
 DISCORD_BOT_TOKEN=你的-bot-token
 DISCORD_CHANNEL_ID=你的頻道-id
+DISCORD_SCAN_USER_ID=你的-discord-使用者-id
 ```
 
-建議也填 `DISCORD_GUILD_ID`，測試時 slash commands 通常會比較快出現。`.env` 已經被 `.gitignore` 排除，不會被提交。
+`DISCORD_SCAN_USER_ID` 用來限制只有指定使用者可以執行 `/scan`；如果留空，則追蹤頻道內的使用者都可以執行。建議也填 `DISCORD_GUILD_ID`，測試時 slash commands 通常會比較快出現。`.env` 已經被 `.gitignore` 排除，不會被提交。
 
 ### 用 Docker 啟動
 
@@ -97,6 +98,8 @@ python -m ff14_raid_namelist.bot
 - `/summary`：顯示目前名單摘要、好評/負評玩家數與世界分布。
 - `/recent`：用卡片與按鈕分頁顯示近期加入的名單，可篩選 `✅` 或 `❌`。
 - `/unparsed`：顯示最近無法解析的評價訊息。
+
+Bot 程式會拒絕在 `DISCORD_CHANNEL_ID` 以外的頻道執行指令。若希望 slash commands 在其他頻道的指令選單中也不要出現，需要到 Discord 的 **Server Settings** -> **Integrations** 中找到這個 bot，將 commands 或 app 權限限定在名單頻道使用。
 
 Bot 執行期間，如果追蹤頻道中的評價訊息被新增、編輯或刪除，也會自動更新產生的 JSON。
 
@@ -195,9 +198,10 @@ At minimum, fill:
 ```bash
 DISCORD_BOT_TOKEN=your-bot-token
 DISCORD_CHANNEL_ID=your-channel-id
+DISCORD_SCAN_USER_ID=your-discord-user-id
 ```
 
-Setting `DISCORD_GUILD_ID` is also recommended while testing because slash commands usually appear faster in a single guild. `.env` is ignored by git.
+`DISCORD_SCAN_USER_ID` limits `/scan` to one user; leave it empty to allow anyone in the tracked channel to run it. Setting `DISCORD_GUILD_ID` is also recommended while testing because slash commands usually appear faster in a single guild. `.env` is ignored by git.
 
 ### Run With Docker
 
@@ -239,6 +243,8 @@ Available slash commands:
 - `/summary` shows player totals, good/bad counts, and world distribution.
 - `/recent` shows recently added records with embed pagination buttons and optional `✅`/`❌` filters.
 - `/unparsed` shows recently unparsed rating messages.
+
+The bot rejects commands outside `DISCORD_CHANNEL_ID`. To also hide slash commands from other channels' command pickers, configure this bot under Discord **Server Settings** -> **Integrations** and limit the commands or app permissions to the namelist channel.
 
 While running, the bot also updates the generated JSON whenever a tracked message is created, edited, or deleted.
 

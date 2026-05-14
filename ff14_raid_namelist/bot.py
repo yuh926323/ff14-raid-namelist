@@ -16,11 +16,13 @@ class BotSettings:
     data_path: Path = Path("bot-data.json")
     output_path: Path = Path("namelist.json")
     guild_id: int | None = None
+    scan_user_id: int | None = None
 
     @classmethod
     def from_env(cls) -> "BotSettings":
         token = _clean_env_value(os.environ.get("DISCORD_BOT_TOKEN"))
         channel_id = _clean_env_value(os.environ.get("DISCORD_CHANNEL_ID"))
+        scan_user_id = _clean_env_value(os.environ.get("DISCORD_SCAN_USER_ID"))
         if not token:
             raise ValueError("DISCORD_BOT_TOKEN is required")
         if _is_placeholder(token) or not _looks_like_bot_token(token):
@@ -38,6 +40,7 @@ class BotSettings:
             data_path=Path(os.environ.get("NAMELIST_DATA_PATH", "bot-data.json")),
             output_path=Path(os.environ.get("NAMELIST_OUTPUT_PATH", "namelist.json")),
             guild_id=_optional_int(_clean_env_value(os.environ.get("DISCORD_GUILD_ID"))),
+            scan_user_id=_optional_int(scan_user_id),
         )
 
 
@@ -232,6 +235,16 @@ def create_bot(settings: BotSettings):
         )
         return False
 
+    async def ensure_scan_user(interaction: discord.Interaction) -> bool:
+        if settings.scan_user_id is None or interaction.user.id == settings.scan_user_id:
+            return True
+
+        await interaction.response.send_message(
+            "只有指定的名單管理者可以使用 `/scan`。",
+            ephemeral=True,
+        )
+        return False
+
     @bot.tree.command(name="summary", description="顯示目前 FF14 名單摘要。")
     async def summary_command(interaction: discord.Interaction) -> None:
         if not await ensure_target_command_channel(interaction):
@@ -333,6 +346,8 @@ def create_bot(settings: BotSettings):
     @app_commands.describe(limit="最多掃描最近幾則訊息；留空表示全部掃描。")
     async def scan_command(interaction: discord.Interaction, limit: int | None = None) -> None:
         if not await ensure_target_command_channel(interaction):
+            return
+        if not await ensure_scan_user(interaction):
             return
 
         if limit is not None and limit < 1:
