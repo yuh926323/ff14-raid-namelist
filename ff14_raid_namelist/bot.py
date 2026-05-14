@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .parser import BAD_MARKER, GOOD_MARKER
+from .parser import BAD_MARKER, GOOD_MARKER, record_content_lines
 from .store import NamelistStore
 
 
@@ -410,7 +410,7 @@ def _has_rating_marker(content: str | None) -> bool:
         return False
     return any(
         line.strip().startswith((GOOD_MARKER, BAD_MARKER))
-        for line in content.splitlines()
+        for line in record_content_lines(content)
     )
 
 

@@ -56,6 +56,7 @@ ENTRY_SPLIT_RE = re.compile(r"\s*[|｜]\s*(?=[✅❌])")
 ENTRY_START_RE = re.compile(r"^\s*(?P<marker>[✅❌])\s*(?P<body>.*)$")
 TRAILING_WORLD_PAREN_RE = re.compile(r"^[)）\]}】】\s:：,，、-]+")
 ENTRY_SEPARATOR_RE = re.compile(r"[\s:：,，、()（）]+")
+FENCED_CODE_BLOCK_RE = re.compile(r"^(?P<fence>`{3,}|~{3,})")
 
 
 @dataclass(frozen=True)
@@ -181,7 +182,7 @@ def summarize_export(
         message_had_rating_line = False
         metadata = _message_metadata(message)
 
-        for line in _content_lines(content):
+        for line in record_content_lines(content):
             entries = _rating_entries(line)
             if not entries:
                 continue
@@ -258,6 +259,29 @@ def summarize_export(
 
 def extract_mentions(text: str) -> list[Mention]:
     return [parsed.mention for parsed in extract_parsed_mentions(text)]
+
+
+def record_content_lines(content: str) -> list[str]:
+    lines: list[str] = []
+    active_fence: str | None = None
+
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        fence_marker = _fenced_code_marker(line)
+        if fence_marker is not None:
+            if active_fence is None:
+                active_fence = fence_marker
+            elif active_fence == fence_marker:
+                active_fence = None
+            continue
+
+        if active_fence is None:
+            lines.append(line)
+
+    return lines
 
 
 def extract_parsed_mentions(text: str) -> list[ParsedMention]:
@@ -507,8 +531,11 @@ def _author_name(author: Any) -> str | None:
     return _optional_string(author)
 
 
-def _content_lines(content: str) -> list[str]:
-    return [line.strip() for line in content.splitlines() if line.strip()]
+def _fenced_code_marker(line: str) -> str | None:
+    match = FENCED_CODE_BLOCK_RE.match(line)
+    if match is None:
+        return None
+    return match.group("fence")[0]
 
 
 def _unparsed_record(

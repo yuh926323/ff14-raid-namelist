@@ -178,6 +178,45 @@ def test_message_not_starting_with_rating_marker_is_skipped_even_if_marker_exist
     assert result["source"]["skipped_messages"] == 1
 
 
+def test_fenced_code_block_examples_are_skipped() -> None:
+    content = """**Bot 說明**
+
+例如：
+```text
+✅ 小明@鳳凰 補量穩定、機制處理很好
+❌ 小花 (奧汀) 多次進度詐欺
+```
+
+`✅` 代表合作體驗良好，`❌` 代表需要特別留意。
+
+**建議留言格式**
+```text
+✅ 玩家名稱@世界 原因
+❌ 玩家名稱 (世界) 原因
+```
+"""
+    result = summarize([message(content, message_id="1")])
+
+    assert result["players"] == []
+    assert result["unparsed"] == []
+    assert result["source"]["skipped_messages"] == 1
+
+
+def test_rating_records_outside_fenced_code_blocks_are_still_parsed() -> None:
+    content = """```text
+✅ 範例玩家@鳳凰 不應該解析
+```
+
+✅ 真實玩家@鳳凰 實際紀錄
+"""
+    result = summarize([message(content, message_id="1")])
+
+    assert len(result["players"]) == 1
+    player = result["players"][0]
+    assert player["key"] == "真實玩家@鳳凰"
+    assert player["evidence"][0]["reason"] == "實際紀錄"
+
+
 def test_multiple_leading_rating_entries_are_split_by_marker_segments() -> None:
     result = summarize(
         [
