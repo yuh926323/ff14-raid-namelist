@@ -17,6 +17,9 @@ RUN apt-get update \
         vim \
     && rm -rf /var/lib/apt/lists/*
 
+RUN groupadd --gid 1000 python \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash python
+
 COPY pyproject.toml README.md ./
 COPY ff14_raid_namelist ./ff14_raid_namelist
 COPY docker/start-python.sh /usr/local/bin/start-python

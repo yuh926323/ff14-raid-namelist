@@ -19,10 +19,16 @@ class BotSettings:
 
     @classmethod
     def from_env(cls) -> "BotSettings":
-        token = os.environ.get("DISCORD_BOT_TOKEN")
-        channel_id = os.environ.get("DISCORD_CHANNEL_ID")
+        token = _clean_env_value(os.environ.get("DISCORD_BOT_TOKEN"))
+        channel_id = _clean_env_value(os.environ.get("DISCORD_CHANNEL_ID"))
         if not token:
             raise ValueError("DISCORD_BOT_TOKEN is required")
+        if _is_placeholder(token) or not _looks_like_bot_token(token):
+            raise ValueError(
+                "DISCORD_BOT_TOKEN does not look like a Discord bot token. "
+                "Use Discord Developer Portal -> your application -> Bot -> Reset Token; "
+                "do not use Client Secret, Application ID, or Public Key."
+            )
         if not channel_id:
             raise ValueError("DISCORD_CHANNEL_ID is required")
 
@@ -31,7 +37,7 @@ class BotSettings:
             channel_id=int(channel_id),
             data_path=Path(os.environ.get("NAMELIST_DATA_PATH", "bot-data.json")),
             output_path=Path(os.environ.get("NAMELIST_OUTPUT_PATH", "namelist.json")),
-            guild_id=_optional_int(os.environ.get("DISCORD_GUILD_ID")),
+            guild_id=_optional_int(_clean_env_value(os.environ.get("DISCORD_GUILD_ID"))),
         )
 
 
@@ -219,6 +225,23 @@ def _optional_int(value: str | None) -> int | None:
     if not value:
         return None
     return int(value)
+
+
+def _clean_env_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        cleaned = cleaned[1:-1].strip()
+    return cleaned
+
+
+def _is_placeholder(value: str) -> bool:
+    return value.startswith("replace-with-")
+
+
+def _looks_like_bot_token(value: str) -> bool:
+    return len(value) >= 50 and "." in value and " " not in value
 
 
 if __name__ == "__main__":

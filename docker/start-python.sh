@@ -16,17 +16,22 @@ is_placeholder() {
     [[ "$1" == replace-with-* ]]
 }
 
+looks_like_bot_token() {
+    [[ "${#1}" -ge 50 && "$1" == *.* && "$1" != *" "* ]]
+}
+
 if [[ -n "${DISCORD_BOT_TOKEN:-}" ]] \
     && [[ -n "${DISCORD_CHANNEL_ID:-}" ]] \
     && ! is_placeholder "${DISCORD_BOT_TOKEN}" \
-    && ! is_placeholder "${DISCORD_CHANNEL_ID}"; then
+    && ! is_placeholder "${DISCORD_CHANNEL_ID}" \
+    && looks_like_bot_token "${DISCORD_BOT_TOKEN}"; then
     echo "Starting FF14 raid namelist bot..."
     cd /works/ff14-raid-namelist
     python -m ff14_raid_namelist.bot &
     bot_pid="$!"
 else
     echo "Python workspace is ready."
-    echo "Set DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID in /works/ff14-raid-namelist/.env to auto-start the bot."
+    echo "Set a valid bot token and channel ID in /works/ff14-raid-namelist/.env to auto-start the bot."
 fi
 
 while true; do
