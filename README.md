@@ -6,6 +6,39 @@
 
 ## Discord Bot 模式
 
+### 從零開始設定
+
+1. 到 Discord Developer Portal 建立 application：
+   - 開啟 <https://discord.com/developers/applications>
+   - 按 **New Application**
+   - 輸入名稱，例如 `FF14 Raid Namelist`
+
+2. 建立 bot 並取得 token：
+   - 進入 application 後，打開 **Bot** 頁面
+   - 建立 bot
+   - 按 **Reset Token** 或 **Copy Token**
+   - 不要把 token 貼到 Discord、GitHub 或任何聊天中
+
+3. 啟用 bot 讀訊息內容的權限：
+   - 在 **Bot** 頁面找到 **Privileged Gateway Intents**
+   - 開啟 **Message Content Intent**
+   - 儲存設定
+
+4. 產生邀請連結：
+   - 打開 **OAuth2** -> **URL Generator**
+   - Scopes 勾選 `bot` 和 `applications.commands`
+   - Bot Permissions 勾選：
+     - View Channel
+     - Read Message History
+     - Send Messages
+     - Use Application Commands
+   - 複製產生出的 URL，開啟後把 bot 加進你的 Discord server
+
+5. 取得 Discord ID：
+   - Discord 使用者設定中啟用 **Developer Mode**
+   - 右鍵名單頻道，複製 **Channel ID**
+   - 右鍵伺服器圖示，複製 **Server ID**，這是可選的，但測試 slash command 時建議設定
+
 安裝 bot 需要的依賴：
 
 ```bash
@@ -25,6 +58,8 @@ python3 -m pip install -e '.[bot]'
 export DISCORD_BOT_TOKEN='你的-bot-token'
 export DISCORD_CHANNEL_ID='你的頻道-id'
 ```
+
+也可以複製 `.env.example` 成 `.env` 自己留著記錄設定值；`.env` 已經被 `.gitignore` 排除，不會被提交。
 
 可選環境變數：
 
@@ -84,6 +119,39 @@ Tools for summarizing FF14 player notes from Discord messages.
 If you plan to maintain the list over time, bot mode is recommended. The bot watches one Discord text channel, records messages containing `✅` or `❌`, and keeps the generated `namelist.json` up to date.
 
 ## Bot Mode
+
+### Setup From Scratch
+
+1. Create an application in the Discord Developer Portal:
+   - Open <https://discord.com/developers/applications>
+   - Click **New Application**
+   - Enter a name, such as `FF14 Raid Namelist`
+
+2. Create the bot and get its token:
+   - Open the **Bot** page for the application
+   - Create a bot
+   - Click **Reset Token** or **Copy Token**
+   - Do not paste the token into Discord, GitHub, or chat
+
+3. Enable message content access:
+   - On the **Bot** page, find **Privileged Gateway Intents**
+   - Enable **Message Content Intent**
+   - Save changes
+
+4. Generate the invite URL:
+   - Open **OAuth2** -> **URL Generator**
+   - Select the `bot` and `applications.commands` scopes
+   - Select these Bot Permissions:
+     - View Channel
+     - Read Message History
+     - Send Messages
+     - Use Application Commands
+   - Open the generated URL and invite the bot to your Discord server
+
+5. Copy Discord IDs:
+   - Enable **Developer Mode** in Discord user settings
+   - Right-click the namelist channel and copy **Channel ID**
+   - Right-click the server icon and copy **Server ID**; this is optional, but recommended while testing slash commands
 
 Install the bot dependency:
 
