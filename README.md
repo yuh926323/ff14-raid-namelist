@@ -39,41 +39,44 @@
    - 右鍵名單頻道，複製 **Channel ID**
    - 右鍵伺服器圖示，複製 **Server ID**，這是可選的，但測試 slash command 時建議設定
 
-安裝 bot 需要的依賴：
+設定 `.env`：
 
 ```bash
-python3 -m pip install -e '.[bot]'
+cp .env.example .env
+nano .env
 ```
 
-到 Discord Developer Portal 建立一個 Discord application 和 bot，並在 bot 設定中啟用 **Message Content Intent**。接著邀請 bot 進入你的伺服器，並讓它在名單頻道擁有以下權限：
-
-- View Channel
-- Read Message History
-- Send Messages
-- Use Application Commands
-
-設定必要環境變數：
+`.env` 至少要填：
 
 ```bash
-export DISCORD_BOT_TOKEN='你的-bot-token'
-export DISCORD_CHANNEL_ID='你的頻道-id'
+DISCORD_BOT_TOKEN=你的-bot-token
+DISCORD_CHANNEL_ID=你的頻道-id
 ```
 
-也可以複製 `.env.example` 成 `.env` 自己留著記錄設定值；`.env` 已經被 `.gitignore` 排除，不會被提交。
+建議也填 `DISCORD_GUILD_ID`，測試時 slash commands 通常會比較快出現。`.env` 已經被 `.gitignore` 排除，不會被提交。
 
-可選環境變數：
+### 用 Docker 啟動
+
+此專案已在 `~/webserver/docker-compose.yml` 加入 `ff14-raid-namelist` service。Docker image 會從 `~/works/ff14-raid-namelist` build，不需要在 host 安裝 Python 套件。
+
+從 `~/webserver` 啟動：
 
 ```bash
-export DISCORD_GUILD_ID='你的伺服器-id'
-export NAMELIST_DATA_PATH='bot-data.json'
-export NAMELIST_OUTPUT_PATH='namelist.json'
+cd ~/webserver
+docker compose build ff14-raid-namelist
+docker compose up -d ff14-raid-namelist
 ```
 
-啟動 bot：
+查看 log：
 
 ```bash
-python3 -m ff14_raid_namelist.bot
+docker compose logs -f ff14-raid-namelist
 ```
+
+產生的資料會放在：
+
+- `~/works/ff14-raid-namelist/data/bot-data.json`
+- `~/works/ff14-raid-namelist/data/namelist.json`
 
 可用的 slash commands：
 
@@ -85,6 +88,18 @@ python3 -m ff14_raid_namelist.bot
 Bot 執行期間，如果追蹤頻道中的評價訊息被新增、編輯或刪除，也會自動更新產生的 JSON。
 
 ## 離線匯出模式
+
+如果只是要處理 DiscordChatExporter 匯出的 JSON，也可以直接用 Docker image 執行 CLI：
+
+```bash
+cd ~/webserver
+docker compose run --rm \
+  -v ~/works/ff14-raid-namelist:/work \
+  ff14-raid-namelist \
+  python -m ff14_raid_namelist --input /work/channel.json --output /work/namelist.json --pretty
+```
+
+有安裝本機 Python 時，也可以直接執行：
 
 ```bash
 python3 -m ff14_raid_namelist --input channel.json --output namelist.json --pretty
@@ -153,39 +168,42 @@ If you plan to maintain the list over time, bot mode is recommended. The bot wat
    - Right-click the namelist channel and copy **Channel ID**
    - Right-click the server icon and copy **Server ID**; this is optional, but recommended while testing slash commands
 
-Install the bot dependency:
+Create `.env`:
 
 ```bash
-python3 -m pip install -e '.[bot]'
+cp .env.example .env
+nano .env
 ```
 
-Create a Discord application and bot in the Discord Developer Portal, then enable **Message Content Intent** for the bot. Invite the bot to your server with access to the namelist channel and these channel permissions:
-
-- View Channel
-- Read Message History
-- Send Messages
-- Use Application Commands
-
-Set the required environment variables:
+At minimum, fill:
 
 ```bash
-export DISCORD_BOT_TOKEN='your-bot-token'
-export DISCORD_CHANNEL_ID='your-channel-id'
+DISCORD_BOT_TOKEN=your-bot-token
+DISCORD_CHANNEL_ID=your-channel-id
 ```
 
-Optional environment variables:
+Setting `DISCORD_GUILD_ID` is also recommended while testing because slash commands usually appear faster in a single guild. `.env` is ignored by git.
+
+### Run With Docker
+
+This project is wired into `~/webserver/docker-compose.yml` as the `ff14-raid-namelist` service. The Docker image is built from `~/works/ff14-raid-namelist`, so the host does not need Python package installation.
 
 ```bash
-export DISCORD_GUILD_ID='your-server-id'
-export NAMELIST_DATA_PATH='bot-data.json'
-export NAMELIST_OUTPUT_PATH='namelist.json'
+cd ~/webserver
+docker compose build ff14-raid-namelist
+docker compose up -d ff14-raid-namelist
 ```
 
-Run the bot:
+View logs:
 
 ```bash
-python3 -m ff14_raid_namelist.bot
+docker compose logs -f ff14-raid-namelist
 ```
+
+Generated data is written to:
+
+- `~/works/ff14-raid-namelist/data/bot-data.json`
+- `~/works/ff14-raid-namelist/data/namelist.json`
 
 Available slash commands:
 
@@ -197,6 +215,18 @@ Available slash commands:
 While running, the bot also updates the generated JSON whenever a tracked message is created, edited, or deleted.
 
 ## Offline Export Mode
+
+To process DiscordChatExporter JSON with Docker:
+
+```bash
+cd ~/webserver
+docker compose run --rm \
+  -v ~/works/ff14-raid-namelist:/work \
+  ff14-raid-namelist \
+  python -m ff14_raid_namelist --input /work/channel.json --output /work/namelist.json --pretty
+```
+
+If Python is installed locally, you can also run:
 
 ```bash
 python3 -m ff14_raid_namelist --input channel.json --output namelist.json --pretty
