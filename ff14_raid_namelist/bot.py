@@ -222,8 +222,21 @@ def create_bot(settings: BotSettings):
                     return child
             return None
 
+    async def ensure_target_command_channel(interaction: discord.Interaction) -> bool:
+        if interaction.channel_id == settings.channel_id:
+            return True
+
+        await interaction.response.send_message(
+            f"這個 Bot 只能在 <#{settings.channel_id}> 使用，請到指定頻道再執行指令。",
+            ephemeral=True,
+        )
+        return False
+
     @bot.tree.command(name="summary", description="顯示目前 FF14 名單摘要。")
     async def summary_command(interaction: discord.Interaction) -> None:
+        if not await ensure_target_command_channel(interaction):
+            return
+
         summary = bot.store.write_summary(settings.output_path)
         stats = _summary_stats(summary)
         embed = discord.Embed(
@@ -255,6 +268,9 @@ def create_bot(settings: BotSettings):
 
     @bot.tree.command(name="unparsed", description="顯示最近無法解析的評價訊息。")
     async def unparsed_command(interaction: discord.Interaction) -> None:
+        if not await ensure_target_command_channel(interaction):
+            return
+
         summary = bot.store.write_summary(settings.output_path)
         records = summary["unparsed"][-5:]
         if not records:
@@ -288,6 +304,9 @@ def create_bot(settings: BotSettings):
         page: int = 1,
         page_size: int = 8,
     ) -> None:
+        if not await ensure_target_command_channel(interaction):
+            return
+
         summary = bot.store.write_summary(settings.output_path)
         records = _recent_records(summary, rating=rating)
         if not records:
@@ -313,6 +332,9 @@ def create_bot(settings: BotSettings):
     @bot.tree.command(name="scan", description="掃描目前頻道歷史訊息並重建名單。")
     @app_commands.describe(limit="最多掃描最近幾則訊息；留空表示全部掃描。")
     async def scan_command(interaction: discord.Interaction, limit: int | None = None) -> None:
+        if not await ensure_target_command_channel(interaction):
+            return
+
         if limit is not None and limit < 1:
             await interaction.response.send_message("掃描數量至少要是 1。", ephemeral=True)
             return
