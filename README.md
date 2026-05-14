@@ -57,20 +57,33 @@ DISCORD_CHANNEL_ID=你的頻道-id
 
 ### 用 Docker 啟動
 
-此專案已在 `~/webserver/docker-compose.yml` 加入 `ff14-raid-namelist` service。Docker image 會從 `~/works/ff14-raid-namelist` build，不需要在 host 安裝 Python 套件。
+此專案已在 `~/webserver/docker-compose.yml` 加入通用的 `python` service。Docker image 會從 `~/works/ff14-raid-namelist` build，並掛載整個 `~/works` 到 container 的 `/works`，不需要在 host 安裝 Python 套件。
 
 從 `~/webserver` 啟動：
 
 ```bash
 cd ~/webserver
-docker compose build ff14-raid-namelist
-docker compose up -d ff14-raid-namelist
+docker compose build python
+docker compose up -d python
 ```
 
 查看 log：
 
 ```bash
-docker compose logs -f ff14-raid-namelist
+docker compose logs -f python
+```
+
+進入 Python container：
+
+```bash
+docker compose exec python bash
+```
+
+進入後可以在 `/works` 看到你的所有專案：
+
+```bash
+cd /works/ff14-raid-namelist
+python -m ff14_raid_namelist.bot
 ```
 
 產生的資料會放在：
@@ -94,9 +107,11 @@ Bot 執行期間，如果追蹤頻道中的評價訊息被新增、編輯或刪�
 ```bash
 cd ~/webserver
 docker compose run --rm \
-  -v ~/works/ff14-raid-namelist:/work \
-  ff14-raid-namelist \
-  python -m ff14_raid_namelist --input /work/channel.json --output /work/namelist.json --pretty
+  python \
+  python -m ff14_raid_namelist \
+  --input /works/ff14-raid-namelist/channel.json \
+  --output /works/ff14-raid-namelist/namelist.json \
+  --pretty
 ```
 
 有安裝本機 Python 時，也可以直接執行：
@@ -186,18 +201,31 @@ Setting `DISCORD_GUILD_ID` is also recommended while testing because slash comma
 
 ### Run With Docker
 
-This project is wired into `~/webserver/docker-compose.yml` as the `ff14-raid-namelist` service. The Docker image is built from `~/works/ff14-raid-namelist`, so the host does not need Python package installation.
+This project is wired into `~/webserver/docker-compose.yml` as a generic `python` service. The Docker image is built from `~/works/ff14-raid-namelist` and mounts all of `~/works` into `/works`, so the host does not need Python package installation.
 
 ```bash
 cd ~/webserver
-docker compose build ff14-raid-namelist
-docker compose up -d ff14-raid-namelist
+docker compose build python
+docker compose up -d python
 ```
 
 View logs:
 
 ```bash
-docker compose logs -f ff14-raid-namelist
+docker compose logs -f python
+```
+
+Enter the Python container:
+
+```bash
+docker compose exec python bash
+```
+
+Inside the container, all projects are available under `/works`:
+
+```bash
+cd /works/ff14-raid-namelist
+python -m ff14_raid_namelist.bot
 ```
 
 Generated data is written to:
@@ -221,9 +249,11 @@ To process DiscordChatExporter JSON with Docker:
 ```bash
 cd ~/webserver
 docker compose run --rm \
-  -v ~/works/ff14-raid-namelist:/work \
-  ff14-raid-namelist \
-  python -m ff14_raid_namelist --input /work/channel.json --output /work/namelist.json --pretty
+  python \
+  python -m ff14_raid_namelist \
+  --input /works/ff14-raid-namelist/channel.json \
+  --output /works/ff14-raid-namelist/namelist.json \
+  --pretty
 ```
 
 If Python is installed locally, you can also run:
