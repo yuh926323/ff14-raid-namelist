@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ff14-raid-namelist"
+version = "0.1.0"
+description = "Summarize FF14 player notes from DiscordChatExporter JSON."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Chester Yang" }
+]
+
+[project.scripts]
+ff14-raid-namelist = "ff14_raid_namelist.cli:main"
+ff14-raid-namelist-bot = "ff14_raid_namelist.bot:main"
+
+[project.optional-dependencies]
+bot = ["discord.py>=2.4,<3"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
