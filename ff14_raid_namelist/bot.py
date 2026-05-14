@@ -124,6 +124,80 @@ def create_bot(settings: BotSettings):
 
     bot = RaidNamelistBot()
 
+    class RecentRecordsView(discord.ui.View):
+        def __init__(
+            self,
+            *,
+            records: list[dict[str, Any]],
+            rating: str | None,
+            page: int,
+            page_size: int,
+            user_id: int,
+        ) -> None:
+            super().__init__(timeout=300)
+            self.records = records
+            self.rating = rating
+            self.page_size = _clamp_page_size(page_size)
+            self.user_id = user_id
+            self.page = _clamp_page(page, len(records), self.page_size)
+            self._sync_buttons()
+
+        async def interaction_check(self, interaction: discord.Interaction) -> bool:
+            if interaction.user.id == self.user_id:
+                return True
+
+            await interaction.response.send_message(
+                "Only the user who ran `/recent` can use these buttons.",
+                ephemeral=True,
+            )
+            return False
+
+        @discord.ui.button(label="上一頁", style=discord.ButtonStyle.secondary)
+        async def previous_page(
+            self,
+            interaction: discord.Interaction,
+            button: discord.ui.Button,
+        ) -> None:
+            self.page = max(1, self.page - 1)
+            self._sync_buttons()
+            await interaction.response.edit_message(content=self.content(), view=self)
+
+        @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary)
+        async def next_page(
+            self,
+            interaction: discord.Interaction,
+            button: discord.ui.Button,
+        ) -> None:
+            self.page = min(self.total_pages, self.page + 1)
+            self._sync_buttons()
+            await interaction.response.edit_message(content=self.content(), view=self)
+
+        @property
+        def total_pages(self) -> int:
+            return _total_pages(len(self.records), self.page_size)
+
+        def content(self) -> str:
+            return _format_recent_response(
+                self.records,
+                rating=self.rating,
+                page=self.page,
+                page_size=self.page_size,
+            )
+
+        def _sync_buttons(self) -> None:
+            previous_button = self._button("上一頁")
+            next_button = self._button("下一頁")
+            if previous_button is not None:
+                previous_button.disabled = self.page <= 1
+            if next_button is not None:
+                next_button.disabled = self.page >= self.total_pages
+
+        def _button(self, label: str) -> discord.ui.Button | None:
+            for child in self.children:
+                if isinstance(child, discord.ui.Button) and child.label == label:
+                    return child
+            return None
+
     @bot.tree.command(name="summary", description="Show the current FF14 namelist summary.")
     async def summary_command(interaction: discord.Interaction) -> None:
         summary = bot.store.write_summary(settings.output_path)
@@ -180,13 +254,25 @@ def create_bot(settings: BotSettings):
     ) -> None:
         summary = bot.store.write_summary(settings.output_path)
         records = _recent_records(summary, rating=rating)
-        response = _format_recent_response(
-            records,
+        if not records:
+            await interaction.response.send_message(
+                _format_recent_response(records, rating=rating, page=page, page_size=page_size),
+                ephemeral=True,
+            )
+            return
+
+        view = RecentRecordsView(
+            records=records,
             rating=rating,
             page=page,
             page_size=page_size,
+            user_id=interaction.user.id,
         )
-        await interaction.response.send_message(response, ephemeral=True)
+        await interaction.response.send_message(
+            view.content(),
+            view=view if view.total_pages > 1 else None,
+            ephemeral=True,
+        )
 
     @bot.tree.command(name="scan", description="Scan the tracked channel history.")
     @app_commands.describe(limit="Maximum number of latest messages to scan. Leave empty for all.")
@@ -293,11 +379,10 @@ def _format_recent_response(
     page: int,
     page_size: int,
 ) -> str:
-    page = max(1, page)
-    page_size = min(10, max(1, page_size))
+    page_size = _clamp_page_size(page_size)
     total = len(records)
-    total_pages = max(1, (total + page_size - 1) // page_size)
-    page = min(page, total_pages)
+    total_pages = _total_pages(total, page_size)
+    page = _clamp_page(page, total, page_size)
     label = _rating_label(rating) if rating else "all"
 
     if total == 0:
@@ -313,10 +398,22 @@ def _format_recent_response(
         author = record.get("author") or "unknown author"
         timestamp = _short_timestamp(record.get("timestamp"))
         reason = record.get("reason") or record.get("text") or ""
-        reason_text = f" - {_truncate(str(reason), 120)}" if reason else ""
+        reason_text = f" - {_truncate(str(reason), 100)}" if reason else ""
         lines.append(f"{offset}. {marker} `{key}` by {author} at {timestamp}{reason_text}")
 
     return "\n".join(lines)
+
+
+def _clamp_page(page: int, total_records: int, page_size: int) -> int:
+    return min(max(1, page), _total_pages(total_records, page_size))
+
+
+def _clamp_page_size(page_size: int) -> int:
+    return min(10, max(1, page_size))
+
+
+def _total_pages(total_records: int, page_size: int) -> int:
+    return max(1, (total_records + page_size - 1) // page_size)
 
 
 def _rating_marker(rating: Any) -> str:

@@ -6,9 +6,12 @@ from unittest.mock import patch
 
 from ff14_raid_namelist.bot import (
     BotSettings,
+    _clamp_page,
+    _clamp_page_size,
     _format_recent_response,
     _has_rating_marker,
     _recent_records,
+    _total_pages,
 )
 
 
@@ -107,6 +110,14 @@ class BotRecentCommandTests(unittest.TestCase):
         self.assertIn("page 1/1", response)
         self.assertIn("❌ `Gamma Delta@Kujata` by bob", response)
         self.assertIn("left after one pull", response)
+
+    def test_pagination_helpers_clamp_page_and_size(self) -> None:
+        self.assertEqual(_clamp_page_size(0), 1)
+        self.assertEqual(_clamp_page_size(99), 10)
+        self.assertEqual(_total_pages(0, 8), 1)
+        self.assertEqual(_total_pages(17, 8), 3)
+        self.assertEqual(_clamp_page(-1, 17, 8), 1)
+        self.assertEqual(_clamp_page(99, 17, 8), 3)
 
 
 if __name__ == "__main__":
