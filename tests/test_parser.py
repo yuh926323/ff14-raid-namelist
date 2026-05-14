@@ -209,15 +209,30 @@ def test_tw_world_aliases_are_canonicalized() -> None:
     assert players["小土@泰坦"]["world"] == "泰坦"
 
 
+def test_generated_tw_world_alias_combinations_are_canonicalized() -> None:
+    result = summarize(
+        [
+            message("❌ 安冏 (澳丁)心態不是很好", message_id="1"),
+            message("✅ 小家 家蔞螺 表現穩定", message_id="2"),
+        ]
+    )
+
+    players = {player["key"]: player for player in result["players"]}
+    assert players["安冏@奧汀"]["world"] == "奧汀"
+    assert players["安冏@奧汀"]["evidence"][0]["reason"] == "心態不是很好"
+    assert players["小家@迦樓羅"]["world"] == "迦樓羅"
+    assert players["小家@迦樓羅"]["evidence"][0]["reason"] == "表現穩定"
+
+
 def test_unknown_tw_world_like_text_is_kept_as_reason_not_world() -> None:
-    result = summarize([message("❌ 安冏 (澳丁)心態不是很好", message_id="1")])
+    result = summarize([message("❌ 安冏 (未知)心態不是很好", message_id="1")])
 
     assert len(result["players"]) == 1
     player = result["players"][0]
     assert player["key"] == "安冏"
     assert player["world"] is None
     assert player["needs_world_review"] is True
-    assert player["evidence"][0]["reason"] == "(澳丁)心態不是很好"
+    assert player["evidence"][0]["reason"] == "(未知)心態不是很好"
 
 
 def test_cli_writes_json_output() -> None:

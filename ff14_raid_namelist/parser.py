@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from itertools import product
 from pathlib import Path
 from typing import Any, Literal
 
@@ -21,12 +22,27 @@ TW_WORLDS = (
     "迦樓羅",
     "泰坦",
 )
-TW_WORLD_ALIASES = {
+TW_WORLD_MANUAL_ALIASES = {
     "火神": "伊弗利特",
     "水神": "利維坦",
     "風神": "迦樓羅",
     "土神": "泰坦",
 }
+TW_WORLD_ALIAS_GROUPS = {
+    "奧汀": (
+        ("奧", "澳"),
+        ("汀", "丁", "叮"),
+    ),
+    "迦樓羅": (
+        ("家", "加", "佳", "嘉", "珈", "迦", "痂", "枷", "傢"),
+        ("樓", "婁", "蔞"),
+        ("羅", "螺", "蘿", "鑼", "邏", "籮", "騾", "鏍"),
+    ),
+}
+TW_WORLD_ALIASES = dict(TW_WORLD_MANUAL_ALIASES)
+for canonical_world, alias_groups in TW_WORLD_ALIAS_GROUPS.items():
+    for alias_parts in product(*alias_groups):
+        TW_WORLD_ALIASES.setdefault("".join(alias_parts), canonical_world)
 
 _NAME_PART = r"[A-Z][A-Za-z'-]{1,14}"
 _WORLD = r"[A-Za-z][A-Za-z0-9'-]{1,31}"
