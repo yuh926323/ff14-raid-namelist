@@ -21,6 +21,12 @@ TW_WORLDS = (
     "迦樓羅",
     "泰坦",
 )
+TW_WORLD_ALIASES = {
+    "火神": "伊弗利特",
+    "水神": "利維坦",
+    "風神": "迦樓羅",
+    "土神": "泰坦",
+}
 
 _NAME_PART = r"[A-Z][A-Za-z'-]{1,14}"
 _WORLD = r"[A-Za-z][A-Za-z0-9'-]{1,31}"
@@ -45,7 +51,7 @@ class Mention:
 @dataclass(frozen=True)
 class ParsedMention:
     mention: Mention
-    reason: str | None
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -55,7 +61,7 @@ class Evidence:
     author: str | None
     rating: Rating
     text: str
-    reason: str | None = None
+    reason: str = ""
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -260,7 +266,7 @@ def _extract_latin_mentions(text: str) -> list[ParsedMention]:
     for match in matches:
         name = _normalize_display(match.group("name"))
         world = match.group("world_at") or match.group("world_paren")
-        reason = None
+        reason = ""
         if len(matches) == 1:
             reason = _clean_reason(text[match.end() :])
         parsed.append(
@@ -333,7 +339,7 @@ def _extract_parenthesized_world_mention(text: str) -> ParsedMention | None:
 
 def _extract_tw_separator_world_mention(text: str) -> ParsedMention | None:
     best_match: tuple[int, str] | None = None
-    for world in TW_WORLDS:
+    for world in (*TW_WORLDS, *TW_WORLD_ALIASES):
         index = text.find(world)
         if index <= 0:
             continue
@@ -346,20 +352,21 @@ def _extract_tw_separator_world_mention(text: str) -> ParsedMention | None:
     if best_match is None:
         return None
 
-    index, world = best_match
+    index, world_text = best_match
+    world = _canonical_world(world_text)
     name = _clean_name(text[:index])
     if not name:
         return None
 
-    reason = _clean_reason(text[index + len(world) :])
+    reason = _clean_reason(text[index + len(world_text) :])
     return ParsedMention(mention=Mention(name=name, world=world), reason=reason)
 
 
 def _split_world_and_reason(text: str) -> tuple[str | None, str | None]:
     body = text.strip()
-    for world in TW_WORLDS:
+    for world in (*TW_WORLDS, *TW_WORLD_ALIASES):
         if body.startswith(world):
-            return world, _clean_reason(body[len(world) :])
+            return _canonical_world(world), _clean_reason(body[len(world) :])
 
     match = re.match(r"(?P<world>[A-Za-z][A-Za-z0-9'-]{1,31})(?P<reason>.*)$", body)
     if match is None:
@@ -370,11 +377,11 @@ def _split_world_and_reason(text: str) -> tuple[str | None, str | None]:
 def _split_name_and_reason_without_world(text: str) -> tuple[str | None, str | None]:
     body = _strip_entry_prefix(text)
     if not body:
-        return None, None
+        return None, ""
 
     separator_match = ENTRY_SEPARATOR_RE.search(body)
     if separator_match is None:
-        return _clean_name(body), None
+        return _clean_name(body), ""
 
     name = _clean_name(body[: separator_match.start()])
     reason = _clean_reason(body[separator_match.start() :])
@@ -402,15 +409,21 @@ def _clean_world(text: str) -> str | None:
     world = _normalize_display(text)
     if world in TW_WORLDS:
         return world
+    if world in TW_WORLD_ALIASES:
+        return TW_WORLD_ALIASES[world]
     if re.fullmatch(_WORLD, world):
         return world
     return None
 
 
-def _clean_reason(text: str) -> str | None:
+def _canonical_world(world: str) -> str:
+    return TW_WORLD_ALIASES.get(world, world)
+
+
+def _clean_reason(text: str) -> str:
     reason = TRAILING_WORLD_PAREN_RE.sub("", text).strip()
     reason = _normalize_display(reason)
-    return reason or None
+    return reason
 
 
 def _world_counts(players: list[PlayerAccumulator]) -> list[dict[str, Any]]:

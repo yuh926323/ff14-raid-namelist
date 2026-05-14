@@ -101,6 +101,7 @@ def test_name_only_records_stay_separate_when_multiple_worlds_are_known() -> Non
     assert set(players) == {"Alpha Beta", "Alpha Beta@Kujata", "Alpha Beta@Tonberry"}
     assert players["Alpha Beta"]["needs_world_review"] is True
     assert players["Alpha Beta"]["bad_count"] == 1
+    assert players["Alpha Beta"]["evidence"][0]["reason"] == ""
 
 
 def test_line_with_both_rating_markers_goes_to_unparsed() -> None:
@@ -188,6 +189,24 @@ def test_multiple_leading_rating_entries_are_split_by_marker_segments() -> None:
     assert set(players) == {"Retys", "森亞", "清風清夢", "檸檬可麗露"}
     assert all(player["bad_count"] == 1 for player in players.values())
     assert all(player["needs_world_review"] is True for player in players.values())
+    assert all(player["evidence"][0]["reason"] == "" for player in players.values())
+
+
+def test_tw_world_aliases_are_canonicalized() -> None:
+    result = summarize(
+        [
+            message("✅ 小火 火神 表現穩定", message_id="1"),
+            message("✅ 小水@水神 補量很好", message_id="2"),
+            message("❌ 小風（風神）常常貪刀", message_id="3"),
+            message("❌ 小土：土神 沒開減傷", message_id="4"),
+        ]
+    )
+
+    players = {player["key"]: player for player in result["players"]}
+    assert players["小火@伊弗利特"]["world"] == "伊弗利特"
+    assert players["小水@利維坦"]["world"] == "利維坦"
+    assert players["小風@迦樓羅"]["world"] == "迦樓羅"
+    assert players["小土@泰坦"]["world"] == "泰坦"
 
 
 def test_unknown_tw_world_like_text_is_kept_as_reason_not_world() -> None:
