@@ -11,6 +11,7 @@ from ff14_raid_namelist.bot import (
     _format_recent_response,
     _has_rating_marker,
     _recent_records,
+    _summary_stats,
     _total_pages,
 )
 
@@ -107,17 +108,52 @@ class BotRecentCommandTests(unittest.TestCase):
         self.assertEqual(records[0]["key"], "Gamma Delta@Kujata")
 
         response = _format_recent_response(records, rating="bad", page=1, page_size=1)
-        self.assertIn("page 1/1", response)
-        self.assertIn("❌ `Gamma Delta@Kujata` by bob", response)
+        self.assertIn("第 1/1 頁", response)
+        self.assertIn("❌ `Gamma Delta@Kujata`｜加入者：bob", response)
         self.assertIn("left after one pull", response)
 
     def test_pagination_helpers_clamp_page_and_size(self) -> None:
         self.assertEqual(_clamp_page_size(0), 1)
-        self.assertEqual(_clamp_page_size(99), 10)
+        self.assertEqual(_clamp_page_size(99), 20)
         self.assertEqual(_total_pages(0, 8), 1)
         self.assertEqual(_total_pages(17, 8), 3)
         self.assertEqual(_clamp_page(-1, 17, 8), 1)
         self.assertEqual(_clamp_page(99, 17, 8), 3)
+
+    def test_summary_stats_include_good_bad_mixed_and_world_counts(self) -> None:
+        summary = {
+            "source": {"parsed_records": 4, "unparsed_records": 1},
+            "world_counts": [
+                {"world": "鳳凰", "count": 2},
+                {"world": None, "count": 1},
+            ],
+            "players": [
+                {
+                    "good_count": 2,
+                    "bad_count": 0,
+                    "needs_world_review": False,
+                },
+                {
+                    "good_count": 0,
+                    "bad_count": 1,
+                    "needs_world_review": True,
+                },
+                {
+                    "good_count": 1,
+                    "bad_count": 1,
+                    "needs_world_review": False,
+                },
+            ],
+        }
+
+        stats = _summary_stats(summary)
+
+        self.assertEqual(stats["total_players"], 3)
+        self.assertEqual(stats["good_players"], 2)
+        self.assertEqual(stats["bad_players"], 2)
+        self.assertEqual(stats["mixed_players"], 1)
+        self.assertEqual(stats["needs_world_review_players"], 1)
+        self.assertEqual(stats["world_counts"], "鳳凰：2、未記錄：1")
 
 
 if __name__ == "__main__":

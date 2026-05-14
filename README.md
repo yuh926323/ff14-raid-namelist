@@ -94,8 +94,8 @@ python -m ff14_raid_namelist.bot
 可用的 slash commands：
 
 - `/scan`：掃描被追蹤頻道的歷史訊息，並重建本機資料檔。
-- `/summary`：顯示目前已解析與未解析的統計數字。
-- `/export`：重新寫出產生的 JSON 名單。
+- `/summary`：顯示目前名單摘要、好評/負評玩家數與世界分布。
+- `/recent`：用卡片與按鈕分頁顯示近期加入的名單，可篩選 `✅` 或 `❌`。
 - `/unparsed`：顯示最近無法解析的評價訊息。
 
 Bot 執行期間，如果追蹤頻道中的評價訊息被新增、編輯或刪除，也會自動更新產生的 JSON。
@@ -236,8 +236,8 @@ Generated data is written to:
 Available slash commands:
 
 - `/scan` scans the tracked channel history and rebuilds the local data file.
-- `/summary` shows current parsed/unparsed counts.
-- `/export` rewrites the generated JSON output.
+- `/summary` shows player totals, good/bad counts, and world distribution.
+- `/recent` shows recently added records with embed pagination buttons and optional `✅`/`❌` filters.
 - `/unparsed` shows recently unparsed rating messages.
 
 While running, the bot also updates the generated JSON whenever a tracked message is created, edited, or deleted.

@@ -147,7 +147,7 @@ def create_bot(settings: BotSettings):
                 return True
 
             await interaction.response.send_message(
-                "Only the user who ran `/recent` can use these buttons.",
+                "只有執行 `/recent` 的使用者可以操作這組按鈕。",
                 ephemeral=True,
             )
             return False
@@ -160,7 +160,7 @@ def create_bot(settings: BotSettings):
         ) -> None:
             self.page = max(1, self.page - 1)
             self._sync_buttons()
-            await interaction.response.edit_message(content=self.content(), view=self)
+            await interaction.response.edit_message(embed=self.embed(), view=self)
 
         @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary)
         async def next_page(
@@ -170,19 +170,43 @@ def create_bot(settings: BotSettings):
         ) -> None:
             self.page = min(self.total_pages, self.page + 1)
             self._sync_buttons()
-            await interaction.response.edit_message(content=self.content(), view=self)
+            await interaction.response.edit_message(embed=self.embed(), view=self)
 
         @property
         def total_pages(self) -> int:
             return _total_pages(len(self.records), self.page_size)
 
-        def content(self) -> str:
-            return _format_recent_response(
-                self.records,
-                rating=self.rating,
-                page=self.page,
-                page_size=self.page_size,
+        def embed(self) -> discord.Embed:
+            total = len(self.records)
+            label = _rating_label(self.rating)
+            embed = discord.Embed(
+                title="近期加入名單",
+                description=f"篩選：{label}｜第 {self.page}/{self.total_pages} 頁｜共 {total} 筆",
+                color=_rating_color(self.rating),
             )
+
+            start = (self.page - 1) * self.page_size
+            for offset, record in enumerate(
+                self.records[start : start + self.page_size],
+                start=start + 1,
+            ):
+                marker = _rating_marker(record.get("rating"))
+                key = record.get("key") or record.get("name") or "未知玩家"
+                author = record.get("author") or "未知加入者"
+                timestamp = _short_timestamp(record.get("timestamp"))
+                reason = record.get("reason") or record.get("text") or "未提供"
+                embed.add_field(
+                    name=f"{offset}. {marker} {key}",
+                    value=(
+                        f"加入者：{author}\n"
+                        f"時間：{timestamp}\n"
+                        f"理由：{_truncate(str(reason), 180)}"
+                    ),
+                    inline=False,
+                )
+
+            embed.set_footer(text="使用下方按鈕切換頁面，按鈕會在 5 分鐘後失效。")
+            return embed
 
         def _sync_buttons(self) -> None:
             previous_button = self._button("上一頁")
@@ -198,52 +222,64 @@ def create_bot(settings: BotSettings):
                     return child
             return None
 
-    @bot.tree.command(name="summary", description="Show the current FF14 namelist summary.")
+    @bot.tree.command(name="summary", description="顯示目前 FF14 名單摘要。")
     async def summary_command(interaction: discord.Interaction) -> None:
         summary = bot.store.write_summary(settings.output_path)
-        source = summary["source"]
-        await interaction.response.send_message(
-            (
-                f"Players: {len(summary['players'])}\n"
-                f"Parsed records: {source['parsed_records']}\n"
-                f"Unparsed records: {source['unparsed_records']}\n"
-                f"Output: `{settings.output_path}`"
+        stats = _summary_stats(summary)
+        embed = discord.Embed(
+            title="名單摘要",
+            color=discord.Color.blurple(),
+            description=(
+                f"玩家總數：{stats['total_players']}\n"
+                f"總紀錄數：{stats['total_records']}\n"
+                f"未解析紀錄：{stats['unparsed_records']}"
             ),
-            ephemeral=True,
         )
-
-    @bot.tree.command(name="export", description="Rewrite the namelist JSON output file.")
-    async def export_command(interaction: discord.Interaction) -> None:
-        summary = bot.store.write_summary(settings.output_path)
-        await interaction.response.send_message(
-            f"Wrote `{settings.output_path}` with {len(summary['players'])} players.",
-            ephemeral=True,
+        embed.add_field(
+            name="評價分布",
+            value=(
+                f"{GOOD_MARKER} 被讚好玩家：{stats['good_players']}\n"
+                f"{BAD_MARKER} 被標記糟糕玩家：{stats['bad_players']}\n"
+                f"正負評都有：{stats['mixed_players']}"
+            ),
+            inline=False,
         )
+        embed.add_field(
+            name="資料品質",
+            value=f"尚未確認世界的玩家：{stats['needs_world_review_players']}",
+            inline=False,
+        )
+        if stats["world_counts"]:
+            embed.add_field(name="世界分布", value=stats["world_counts"], inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @bot.tree.command(name="unparsed", description="Show recently unparsed rating messages.")
+    @bot.tree.command(name="unparsed", description="顯示最近無法解析的評價訊息。")
     async def unparsed_command(interaction: discord.Interaction) -> None:
         summary = bot.store.write_summary(settings.output_path)
         records = summary["unparsed"][-5:]
         if not records:
-            await interaction.response.send_message("No unparsed records.", ephemeral=True)
+            await interaction.response.send_message("目前沒有未解析紀錄。", ephemeral=True)
             return
 
         lines = [
-            f"- `{record['reason']}` {record['timestamp'] or 'unknown time'}: {record['text']}"
+            f"- `{record['reason']}` {_short_timestamp(record.get('timestamp'))}：{record['text']}"
             for record in records
         ]
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+        await interaction.response.send_message(
+            "最近未解析紀錄：\n" + "\n".join(lines),
+            ephemeral=True,
+        )
 
-    @bot.tree.command(name="recent", description="Show recently added namelist records.")
+    @bot.tree.command(name="recent", description="顯示近期加入的名單紀錄。")
     @app_commands.describe(
-        rating="Filter by rating.",
-        page="Page number, starting from 1.",
-        page_size="Records per page, from 1 to 10.",
+        rating="依照評價篩選。",
+        page="頁碼，從 1 開始。",
+        page_size="每頁筆數，最多 20 筆。",
     )
     @app_commands.choices(
         rating=[
-            app_commands.Choice(name="✅ good", value="good"),
-            app_commands.Choice(name="❌ bad", value="bad"),
+            app_commands.Choice(name="✅ 讚好", value="good"),
+            app_commands.Choice(name="❌ 糟糕", value="bad"),
         ]
     )
     async def recent_command(
@@ -269,16 +305,16 @@ def create_bot(settings: BotSettings):
             user_id=interaction.user.id,
         )
         await interaction.response.send_message(
-            view.content(),
+            embed=view.embed(),
             view=view if view.total_pages > 1 else None,
             ephemeral=True,
         )
 
-    @bot.tree.command(name="scan", description="Scan the tracked channel history.")
-    @app_commands.describe(limit="Maximum number of latest messages to scan. Leave empty for all.")
+    @bot.tree.command(name="scan", description="掃描目前頻道歷史訊息並重建名單。")
+    @app_commands.describe(limit="最多掃描最近幾則訊息；留空表示全部掃描。")
     async def scan_command(interaction: discord.Interaction, limit: int | None = None) -> None:
         if limit is not None and limit < 1:
-            await interaction.response.send_message("Limit must be at least 1.", ephemeral=True)
+            await interaction.response.send_message("掃描數量至少要是 1。", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -297,10 +333,11 @@ def create_bot(settings: BotSettings):
 
         await interaction.followup.send(
             (
-                f"Scanned {scanned} messages and tracked {len(messages)} rating messages.\n"
-                f"Players: {len(summary['players'])}\n"
-                f"Unparsed records: {summary['source']['unparsed_records']}\n"
-                f"Output: `{settings.output_path}`"
+                f"掃描完成。\n"
+                f"掃描訊息：{scanned}\n"
+                f"收錄評價訊息：{len(messages)}\n"
+                f"玩家總數：{len(summary['players'])}\n"
+                f"未解析紀錄：{summary['source']['unparsed_records']}"
             ),
             ephemeral=True,
         )
@@ -383,23 +420,23 @@ def _format_recent_response(
     total = len(records)
     total_pages = _total_pages(total, page_size)
     page = _clamp_page(page, total, page_size)
-    label = _rating_label(rating) if rating else "all"
+    label = _rating_label(rating)
 
     if total == 0:
-        return f"No recent records for `{label}`."
+        return f"目前沒有 `{label}` 的近期紀錄。"
 
     start = (page - 1) * page_size
     current_records = records[start : start + page_size]
-    lines = [f"Recent records `{label}` page {page}/{total_pages} ({total} total)"]
+    lines = [f"近期名單 `{label}` 第 {page}/{total_pages} 頁，共 {total} 筆"]
 
     for offset, record in enumerate(current_records, start=start + 1):
         marker = _rating_marker(record.get("rating"))
-        key = record.get("key") or record.get("name") or "unknown player"
-        author = record.get("author") or "unknown author"
+        key = record.get("key") or record.get("name") or "未知玩家"
+        author = record.get("author") or "未知加入者"
         timestamp = _short_timestamp(record.get("timestamp"))
         reason = record.get("reason") or record.get("text") or ""
         reason_text = f" - {_truncate(str(reason), 100)}" if reason else ""
-        lines.append(f"{offset}. {marker} `{key}` by {author} at {timestamp}{reason_text}")
+        lines.append(f"{offset}. {marker} `{key}`｜加入者：{author}｜時間：{timestamp}{reason_text}")
 
     return "\n".join(lines)
 
@@ -409,7 +446,7 @@ def _clamp_page(page: int, total_records: int, page_size: int) -> int:
 
 
 def _clamp_page_size(page_size: int) -> int:
-    return min(10, max(1, page_size))
+    return min(20, max(1, page_size))
 
 
 def _total_pages(total_records: int, page_size: int) -> int:
@@ -426,15 +463,66 @@ def _rating_marker(rating: Any) -> str:
 
 def _rating_label(rating: str | None) -> str:
     if rating == "good":
-        return f"{GOOD_MARKER} good"
+        return f"{GOOD_MARKER} 讚好"
     if rating == "bad":
-        return f"{BAD_MARKER} bad"
-    return "all"
+        return f"{BAD_MARKER} 糟糕"
+    return "全部"
+
+
+def _rating_color(rating: str | None) -> int:
+    if rating == "good":
+        return 0x57F287
+    if rating == "bad":
+        return 0xED4245
+    return 0x5865F2
+
+
+def _summary_stats(summary: dict[str, Any]) -> dict[str, Any]:
+    players = summary.get("players", [])
+    source = summary.get("source", {})
+    good_players = 0
+    bad_players = 0
+    mixed_players = 0
+    needs_world_review_players = 0
+
+    for player in players:
+        has_good = int(player.get("good_count") or 0) > 0
+        has_bad = int(player.get("bad_count") or 0) > 0
+        if has_good:
+            good_players += 1
+        if has_bad:
+            bad_players += 1
+        if has_good and has_bad:
+            mixed_players += 1
+        if player.get("needs_world_review"):
+            needs_world_review_players += 1
+
+    return {
+        "total_players": len(players),
+        "total_records": source.get("parsed_records", 0),
+        "unparsed_records": source.get("unparsed_records", 0),
+        "good_players": good_players,
+        "bad_players": bad_players,
+        "mixed_players": mixed_players,
+        "needs_world_review_players": needs_world_review_players,
+        "world_counts": _format_world_counts(summary.get("world_counts", [])),
+    }
+
+
+def _format_world_counts(world_counts: list[dict[str, Any]]) -> str:
+    if not world_counts:
+        return ""
+
+    parts: list[str] = []
+    for record in world_counts:
+        world = record.get("world") or "未記錄"
+        parts.append(f"{world}：{record.get('count', 0)}")
+    return "、".join(parts)
 
 
 def _short_timestamp(timestamp: Any) -> str:
     if not timestamp:
-        return "unknown time"
+        return "未知時間"
     value = str(timestamp)
     return value.replace("T", " ")[:16]
 
