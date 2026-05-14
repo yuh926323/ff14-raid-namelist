@@ -160,6 +160,34 @@ def create_bot(settings: BotSettings):
         ]
         await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
+    @bot.tree.command(name="recent", description="Show recently added namelist records.")
+    @app_commands.describe(
+        rating="Filter by rating.",
+        page="Page number, starting from 1.",
+        page_size="Records per page, from 1 to 10.",
+    )
+    @app_commands.choices(
+        rating=[
+            app_commands.Choice(name="✅ good", value="good"),
+            app_commands.Choice(name="❌ bad", value="bad"),
+        ]
+    )
+    async def recent_command(
+        interaction: discord.Interaction,
+        rating: str | None = None,
+        page: int = 1,
+        page_size: int = 8,
+    ) -> None:
+        summary = bot.store.write_summary(settings.output_path)
+        records = _recent_records(summary, rating=rating)
+        response = _format_recent_response(
+            records,
+            rating=rating,
+            page=page,
+            page_size=page_size,
+        )
+        await interaction.response.send_message(response, ephemeral=True)
+
     @bot.tree.command(name="scan", description="Scan the tracked channel history.")
     @app_commands.describe(limit="Maximum number of latest messages to scan. Leave empty for all.")
     async def scan_command(interaction: discord.Interaction, limit: int | None = None) -> None:
@@ -218,7 +246,106 @@ async def _target_channel(bot: Any, channel_id: int) -> Any:
 
 
 def _has_rating_marker(content: str | None) -> bool:
-    return bool(content) and (GOOD_MARKER in content or BAD_MARKER in content)
+    if not content:
+        return False
+    return any(
+        line.strip().startswith((GOOD_MARKER, BAD_MARKER))
+        for line in content.splitlines()
+    )
+
+
+def _recent_records(
+    summary: dict[str, Any],
+    *,
+    rating: str | None = None,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for player in summary.get("players", []):
+        for evidence in player.get("evidence", []):
+            if rating is not None and evidence.get("rating") != rating:
+                continue
+
+            records.append(
+                {
+                    "key": player.get("key"),
+                    "name": player.get("name"),
+                    "world": player.get("world"),
+                    "rating": evidence.get("rating"),
+                    "timestamp": evidence.get("timestamp"),
+                    "author": evidence.get("author"),
+                    "reason": evidence.get("reason"),
+                    "text": evidence.get("text"),
+                    "message_id": evidence.get("message_id"),
+                }
+            )
+
+    return sorted(
+        records,
+        key=lambda record: (record.get("timestamp") or "", record.get("message_id") or ""),
+        reverse=True,
+    )
+
+
+def _format_recent_response(
+    records: list[dict[str, Any]],
+    *,
+    rating: str | None,
+    page: int,
+    page_size: int,
+) -> str:
+    page = max(1, page)
+    page_size = min(10, max(1, page_size))
+    total = len(records)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, total_pages)
+    label = _rating_label(rating) if rating else "all"
+
+    if total == 0:
+        return f"No recent records for `{label}`."
+
+    start = (page - 1) * page_size
+    current_records = records[start : start + page_size]
+    lines = [f"Recent records `{label}` page {page}/{total_pages} ({total} total)"]
+
+    for offset, record in enumerate(current_records, start=start + 1):
+        marker = _rating_marker(record.get("rating"))
+        key = record.get("key") or record.get("name") or "unknown player"
+        author = record.get("author") or "unknown author"
+        timestamp = _short_timestamp(record.get("timestamp"))
+        reason = record.get("reason") or record.get("text") or ""
+        reason_text = f" - {_truncate(str(reason), 120)}" if reason else ""
+        lines.append(f"{offset}. {marker} `{key}` by {author} at {timestamp}{reason_text}")
+
+    return "\n".join(lines)
+
+
+def _rating_marker(rating: Any) -> str:
+    if rating == "good":
+        return GOOD_MARKER
+    if rating == "bad":
+        return BAD_MARKER
+    return "?"
+
+
+def _rating_label(rating: str | None) -> str:
+    if rating == "good":
+        return f"{GOOD_MARKER} good"
+    if rating == "bad":
+        return f"{BAD_MARKER} bad"
+    return "all"
+
+
+def _short_timestamp(timestamp: Any) -> str:
+    if not timestamp:
+        return "unknown time"
+    value = str(timestamp)
+    return value.replace("T", " ")[:16]
+
+
+def _truncate(value: str, length: int) -> str:
+    if len(value) <= length:
+        return value
+    return value[: length - 3].rstrip() + "..."
 
 
 def _optional_int(value: str | None) -> int | None:

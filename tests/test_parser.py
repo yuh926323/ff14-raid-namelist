@@ -64,6 +64,7 @@ def test_accumulates_good_and_bad_for_same_player_with_world() -> None:
     assert player["name"] == "Alpha Beta"
     assert player["world"] == "Tonberry"
     assert player["needs_world_review"] is False
+    assert player["count"] == 2
     assert player["good_count"] == 1
     assert player["bad_count"] == 1
     assert player["score"] == 0
@@ -124,6 +125,80 @@ def test_full_width_at_parenthesized_world_and_multiple_players() -> None:
     players = {player["key"]: player for player in result["players"]}
     assert set(players) == {"Epsilon Zeta@Mandragora", "Gamma Delta@Kujata"}
     assert all(player["good_count"] == 1 for player in players.values())
+
+
+def test_tw_world_at_separator_and_reason_are_parsed() -> None:
+    result = summarize(
+        [
+            message(
+                "❌ Auotzu@迦樓羅：開了招募說打兩把幻白虎，結果打一把人就跑掉了",
+                message_id="1",
+                author="reporter",
+            )
+        ]
+    )
+
+    assert len(result["players"]) == 1
+    player = result["players"][0]
+    assert player["key"] == "Auotzu@迦樓羅"
+    assert player["world"] == "迦樓羅"
+    assert player["count"] == 1
+    assert player["evidence"][0]["author"] == "reporter"
+    assert player["evidence"][0]["reason"] == "開了招募說打兩把幻白虎，結果打一把人就跑掉了"
+    assert result["world_counts"] == [
+        {"world": "迦樓羅", "needs_world_review": False, "count": 1}
+    ]
+
+
+def test_tw_world_space_colon_and_parentheses_separators_are_parsed() -> None:
+    result = summarize(
+        [
+            message("✅ 圓舞 鳳凰 白魔表現很好", message_id="1"),
+            message("✅ 幼小的蘿莉：伊弗利特 畫家輸出很好", message_id="2"),
+            message("❌ 濃綠茶（奧汀）走位失誤", message_id="3"),
+        ]
+    )
+
+    players = {player["key"]: player for player in result["players"]}
+    assert players["圓舞@鳳凰"]["evidence"][0]["reason"] == "白魔表現很好"
+    assert players["幼小的蘿莉@伊弗利特"]["evidence"][0]["reason"] == "畫家輸出很好"
+    assert players["濃綠茶@奧汀"]["evidence"][0]["reason"] == "走位失誤"
+
+
+def test_message_not_starting_with_rating_marker_is_skipped_even_if_marker_exists() -> None:
+    result = summarize(
+        [
+            message("幻白虎 MT騎士 傷害很低 | ❌黑貓金漸層@利維坦", message_id="1"),
+        ]
+    )
+
+    assert result["players"] == []
+    assert result["unparsed"] == []
+    assert result["source"]["skipped_messages"] == 1
+
+
+def test_multiple_leading_rating_entries_are_split_by_marker_segments() -> None:
+    result = summarize(
+        [
+            message("❌Retys  | ❌森亞 | ❌清風清夢 | ❌檸檬可麗露", message_id="1"),
+        ]
+    )
+
+    players = {player["key"]: player for player in result["players"]}
+    assert set(players) == {"Retys", "森亞", "清風清夢", "檸檬可麗露"}
+    assert all(player["bad_count"] == 1 for player in players.values())
+    assert all(player["needs_world_review"] is True for player in players.values())
+
+
+def test_unknown_tw_world_like_text_is_kept_as_reason_not_world() -> None:
+    result = summarize([message("❌ 安冏 (澳丁)心態不是很好", message_id="1")])
+
+    assert len(result["players"]) == 1
+    player = result["players"][0]
+    assert player["key"] == "安冏"
+    assert player["world"] is None
+    assert player["needs_world_review"] is True
+    assert player["evidence"][0]["reason"] == "(澳丁)心態不是很好"
 
 
 def test_cli_writes_json_output() -> None:

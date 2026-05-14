@@ -12,6 +12,15 @@ Rating = Literal["good", "bad"]
 GOOD_MARKER = "✅"
 BAD_MARKER = "❌"
 MAX_EVIDENCE_TEXT_LENGTH = 500
+TW_WORLDS = (
+    "伊弗利特",
+    "利維坦",
+    "巴哈姆特",
+    "鳳凰",
+    "奧汀",
+    "迦樓羅",
+    "泰坦",
+)
 
 _NAME_PART = r"[A-Z][A-Za-z'-]{1,14}"
 _WORLD = r"[A-Za-z][A-Za-z0-9'-]{1,31}"
@@ -21,6 +30,10 @@ PLAYER_RE = re.compile(
     rf"(?:\s*(?:[@＠]\s*(?P<world_at>{_WORLD})|\((?P<world_paren>{_WORLD})\)))?"
     rf"(?![A-Za-z])"
 )
+ENTRY_SPLIT_RE = re.compile(r"\s*[|｜]\s*(?=[✅❌])")
+ENTRY_START_RE = re.compile(r"^\s*(?P<marker>[✅❌])\s*(?P<body>.*)$")
+TRAILING_WORLD_PAREN_RE = re.compile(r"^[)）\]}】】\s:：,，、-]+")
+ENTRY_SEPARATOR_RE = re.compile(r"[\s:：,，、()（）]+")
 
 
 @dataclass(frozen=True)
@@ -30,12 +43,19 @@ class Mention:
 
 
 @dataclass(frozen=True)
+class ParsedMention:
+    mention: Mention
+    reason: str | None
+
+
+@dataclass(frozen=True)
 class Evidence:
     message_id: str | None
     timestamp: str | None
     author: str | None
     rating: Rating
     text: str
+    reason: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -44,6 +64,7 @@ class Evidence:
             "author": self.author,
             "rating": self.rating,
             "text": self.text,
+            "reason": self.reason,
         }
 
 
@@ -73,6 +94,10 @@ class PlayerAccumulator:
     def score(self) -> int:
         return self.good_count - self.bad_count
 
+    @property
+    def count(self) -> int:
+        return self.good_count + self.bad_count
+
     def add(self, event: Event, *, missing_world: bool) -> None:
         if event.evidence.rating == "good":
             self.good_count += 1
@@ -94,6 +119,7 @@ class PlayerAccumulator:
             "name": self.name,
             "world": self.world,
             "needs_world_review": self.needs_world_review,
+            "count": self.count,
             "good_count": self.good_count,
             "bad_count": self.bad_count,
             "score": self.score,
@@ -134,45 +160,56 @@ def summarize_export(
         metadata = _message_metadata(message)
 
         for line in _content_lines(content):
-            has_good = GOOD_MARKER in line
-            has_bad = BAD_MARKER in line
-            if not has_good and not has_bad:
+            entries = _rating_entries(line)
+            if not entries:
                 continue
 
-            message_had_rating_line = True
+            for entry in entries:
+                message_had_rating_line = True
 
-            if has_good and has_bad:
-                unparsed.append(
-                    _unparsed_record(metadata, "mixed_rating_markers", line)
-                )
-                continue
-
-            rating: Rating = "good" if has_good else "bad"
-            mentions = extract_mentions(line)
-            if not mentions:
-                unparsed.append(_unparsed_record(metadata, "no_player_names", line))
-                continue
-
-            seen_in_line: set[tuple[str, str | None]] = set()
-            for mention in mentions:
-                mention_key = (_identity(mention.name), _optional_identity(mention.world))
-                if mention_key in seen_in_line:
+                marker_match = ENTRY_START_RE.match(entry)
+                if marker_match is None:
                     continue
 
-                seen_in_line.add(mention_key)
-                events.append(
-                    Event(
-                        mention=mention,
-                        evidence=Evidence(
-                            message_id=metadata["message_id"],
-                            timestamp=metadata["timestamp"],
-                            author=metadata["author"],
-                            rating=rating,
-                            text=_trim_text(line),
-                        ),
+                body = marker_match.group("body")
+                if GOOD_MARKER in body or BAD_MARKER in body:
+                    unparsed.append(
+                        _unparsed_record(metadata, "mixed_rating_markers", entry)
                     )
+                    continue
+
+                rating: Rating = (
+                    "good" if marker_match.group("marker") == GOOD_MARKER else "bad"
                 )
-                message_had_event = True
+                parsed_mentions = extract_parsed_mentions(entry)
+                if not parsed_mentions:
+                    unparsed.append(_unparsed_record(metadata, "no_player_names", entry))
+                    continue
+
+                seen_in_entry: set[tuple[str, str | None]] = set()
+                for parsed in parsed_mentions:
+                    mention_key = (
+                        _identity(parsed.mention.name),
+                        _optional_identity(parsed.mention.world),
+                    )
+                    if mention_key in seen_in_entry:
+                        continue
+
+                    seen_in_entry.add(mention_key)
+                    events.append(
+                        Event(
+                            mention=parsed.mention,
+                            evidence=Evidence(
+                                message_id=metadata["message_id"],
+                                timestamp=metadata["timestamp"],
+                                author=metadata["author"],
+                                rating=rating,
+                                text=_trim_text(entry),
+                                reason=parsed.reason,
+                            ),
+                        )
+                    )
+                    message_had_event = True
 
         if message_had_event:
             parsed_message_ids.add(message_key)
@@ -191,19 +228,205 @@ def summarize_export(
             "skipped_messages": skipped_messages,
             "unparsed_records": len(unparsed),
         },
+        "world_counts": _world_counts(players),
         "players": [player.to_json() for player in players],
         "unparsed": unparsed,
     }
 
 
 def extract_mentions(text: str) -> list[Mention]:
-    mentions: list[Mention] = []
-    for match in PLAYER_RE.finditer(text):
+    return [parsed.mention for parsed in extract_parsed_mentions(text)]
+
+
+def extract_parsed_mentions(text: str) -> list[ParsedMention]:
+    marker_match = ENTRY_START_RE.match(text)
+    body = marker_match.group("body") if marker_match else text
+    body = _strip_entry_prefix(body)
+
+    latin_mentions = _extract_latin_mentions(body)
+    if latin_mentions:
+        return latin_mentions
+
+    generic_mention = _extract_single_generic_mention(body)
+    return [generic_mention] if generic_mention else []
+
+
+def _extract_latin_mentions(text: str) -> list[ParsedMention]:
+    matches = list(PLAYER_RE.finditer(text))
+    if not matches or matches[0].start() != 0:
+        return []
+
+    parsed: list[ParsedMention] = []
+    for match in matches:
         name = _normalize_display(match.group("name"))
         world = match.group("world_at") or match.group("world_paren")
-        mentions.append(Mention(name=name, world=_normalize_display(world) if world else None))
-    return mentions
+        reason = None
+        if len(matches) == 1:
+            reason = _clean_reason(text[match.end() :])
+        parsed.append(
+            ParsedMention(
+                mention=Mention(
+                    name=name,
+                    world=_normalize_display(world) if world else None,
+                ),
+                reason=reason,
+            )
+        )
+    return parsed
 
+
+def _extract_single_generic_mention(text: str) -> ParsedMention | None:
+    body = _strip_entry_prefix(text)
+    if not body:
+        return None
+
+    mention_with_world = _extract_at_world_mention(body)
+    if mention_with_world is not None:
+        return mention_with_world
+
+    mention_with_world = _extract_parenthesized_world_mention(body)
+    if mention_with_world is not None:
+        return mention_with_world
+
+    mention_with_world = _extract_tw_separator_world_mention(body)
+    if mention_with_world is not None:
+        return mention_with_world
+
+    name, reason = _split_name_and_reason_without_world(body)
+    if not name:
+        return None
+    return ParsedMention(mention=Mention(name=name, world=None), reason=reason)
+
+
+def _extract_at_world_mention(text: str) -> ParsedMention | None:
+    match = re.match(r"(?P<name>[^@＠|｜]+?)\s*[@＠]\s*(?P<after>.+)$", text)
+    if match is None:
+        return None
+
+    name = _clean_name(match.group("name"))
+    world, reason = _split_world_and_reason(match.group("after"))
+    if not name or world is None:
+        return None
+    return ParsedMention(mention=Mention(name=name, world=world), reason=reason)
+
+
+def _extract_parenthesized_world_mention(text: str) -> ParsedMention | None:
+    match = re.match(
+        r"(?P<name>[^()（）|｜]+?)\s*[（(]\s*(?P<world>[^)）]+)\s*[)）](?P<reason>.*)$",
+        text,
+    )
+    if match is None:
+        return None
+
+    world = _clean_world(match.group("world"))
+    if world is None:
+        return None
+
+    name = _clean_name(match.group("name"))
+    if not name:
+        return None
+    return ParsedMention(
+        mention=Mention(name=name, world=world),
+        reason=_clean_reason(match.group("reason")),
+    )
+
+
+def _extract_tw_separator_world_mention(text: str) -> ParsedMention | None:
+    best_match: tuple[int, str] | None = None
+    for world in TW_WORLDS:
+        index = text.find(world)
+        if index <= 0:
+            continue
+        previous = text[index - 1]
+        if previous not in " \t:：,，、（(":
+            continue
+        if best_match is None or index < best_match[0]:
+            best_match = (index, world)
+
+    if best_match is None:
+        return None
+
+    index, world = best_match
+    name = _clean_name(text[:index])
+    if not name:
+        return None
+
+    reason = _clean_reason(text[index + len(world) :])
+    return ParsedMention(mention=Mention(name=name, world=world), reason=reason)
+
+
+def _split_world_and_reason(text: str) -> tuple[str | None, str | None]:
+    body = text.strip()
+    for world in TW_WORLDS:
+        if body.startswith(world):
+            return world, _clean_reason(body[len(world) :])
+
+    match = re.match(r"(?P<world>[A-Za-z][A-Za-z0-9'-]{1,31})(?P<reason>.*)$", body)
+    if match is None:
+        return None, None
+    return _normalize_display(match.group("world")), _clean_reason(match.group("reason"))
+
+
+def _split_name_and_reason_without_world(text: str) -> tuple[str | None, str | None]:
+    body = _strip_entry_prefix(text)
+    if not body:
+        return None, None
+
+    separator_match = ENTRY_SEPARATOR_RE.search(body)
+    if separator_match is None:
+        return _clean_name(body), None
+
+    name = _clean_name(body[: separator_match.start()])
+    reason = _clean_reason(body[separator_match.start() :])
+    return name, reason
+
+
+def _rating_entries(line: str) -> list[str]:
+    stripped = line.strip()
+    if not stripped.startswith((GOOD_MARKER, BAD_MARKER)):
+        return []
+    return [entry.strip() for entry in ENTRY_SPLIT_RE.split(stripped) if entry.strip()]
+
+
+def _strip_entry_prefix(text: str) -> str:
+    return text.strip().lstrip(":：-—").strip()
+
+
+def _clean_name(text: str) -> str | None:
+    name = _normalize_display(text)
+    name = name.strip(" \t:：,，、()（）[]【】")
+    return name or None
+
+
+def _clean_world(text: str) -> str | None:
+    world = _normalize_display(text)
+    if world in TW_WORLDS:
+        return world
+    if re.fullmatch(_WORLD, world):
+        return world
+    return None
+
+
+def _clean_reason(text: str) -> str | None:
+    reason = TRAILING_WORLD_PAREN_RE.sub("", text).strip()
+    reason = _normalize_display(reason)
+    return reason or None
+
+
+def _world_counts(players: list[PlayerAccumulator]) -> list[dict[str, Any]]:
+    counts: dict[str, dict[str, Any]] = {}
+    for player in players:
+        world = player.world or "未記錄"
+        record = counts.setdefault(
+            world,
+            {"world": player.world, "needs_world_review": player.world is None, "count": 0},
+        )
+        record["count"] += player.count
+
+    return sorted(
+        counts.values(),
+        key=lambda record: (record["world"] is None, str(record["world"])),
+    )
 
 def _extract_messages(data: Any) -> list[Any]:
     if isinstance(data, dict):
