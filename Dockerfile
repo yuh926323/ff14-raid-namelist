@@ -25,6 +25,14 @@ COPY ff14_raid_namelist ./ff14_raid_namelist
 COPY docker/start-python.sh /usr/local/bin/start-python
 
 RUN pip install --no-cache-dir ".[bot]"
+RUN pip install --no-cache-dir \
+    beautifulsoup4 \
+    flask \
+    gunicorn \
+    lxml \
+    python-dotenv \
+    rapidfuzz \
+    requests
 RUN chmod +x /usr/local/bin/start-python
 
 WORKDIR /works
