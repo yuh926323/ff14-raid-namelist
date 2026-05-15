@@ -195,16 +195,9 @@ def create_bot(settings: BotSettings):
             ):
                 marker = _rating_marker(record.get("rating"))
                 key = record.get("key") or record.get("name") or "未知玩家"
-                author = record.get("author") or "未知加入者"
-                timestamp = _short_timestamp(record.get("timestamp"))
-                reason = record.get("reason") or record.get("text") or "未提供"
                 embed.add_field(
                     name=f"{offset}. {marker} {key}",
-                    value=(
-                        f"加入者：{author}\n"
-                        f"時間：{timestamp}\n"
-                        f"理由：{_truncate(str(reason), 180)}"
-                    ),
+                    value=_format_recent_record_details(record, reason_length=180),
                     inline=False,
                 )
 
@@ -277,6 +270,18 @@ def create_bot(settings: BotSettings):
         )
         if stats["world_counts"]:
             embed.add_field(name="世界分布", value=stats["world_counts"], inline=False)
+        if stats["top_bad_players"]:
+            embed.add_field(
+                name="累計負評較多",
+                value=stats["top_bad_players"],
+                inline=False,
+            )
+        if stats["top_good_players"]:
+            embed.add_field(
+                name="累計好評較多",
+                value=stats["top_good_players"],
+                inline=False,
+            )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @bot.tree.command(name="unparsed", description="顯示最近無法解析的評價訊息。")
@@ -430,6 +435,10 @@ def _recent_records(
                     "key": player.get("key"),
                     "name": player.get("name"),
                     "world": player.get("world"),
+                    "count": player.get("count"),
+                    "good_count": player.get("good_count"),
+                    "bad_count": player.get("bad_count"),
+                    "score": player.get("score"),
                     "rating": evidence.get("rating"),
                     "timestamp": evidence.get("timestamp"),
                     "author": evidence.get("author"),
@@ -469,13 +478,38 @@ def _format_recent_response(
     for offset, record in enumerate(current_records, start=start + 1):
         marker = _rating_marker(record.get("rating"))
         key = record.get("key") or record.get("name") or "未知玩家"
-        author = record.get("author") or "未知加入者"
-        timestamp = _short_timestamp(record.get("timestamp"))
-        reason = record.get("reason") or record.get("text") or ""
-        reason_text = f" - {_truncate(str(reason), 100)}" if reason else ""
-        lines.append(f"{offset}. {marker} `{key}`｜加入者：{author}｜時間：{timestamp}{reason_text}")
+        details = _format_recent_record_details(record, reason_length=100).replace("\n", "｜")
+        lines.append(f"{offset}. {marker} `{key}`｜{details}")
 
     return "\n".join(lines)
+
+
+def _format_recent_record_details(record: dict[str, Any], *, reason_length: int) -> str:
+    author = record.get("author") or "未知加入者"
+    timestamp = _short_timestamp(record.get("timestamp"))
+    lines = [
+        f"加入者：{author}",
+        f"時間：{timestamp}",
+        f"累計：{_rating_counts_label(record)}",
+    ]
+    reason = _display_reason(record.get("reason"))
+    if reason:
+        lines.append(f"理由：{_truncate(reason, reason_length)}")
+    return "\n".join(lines)
+
+
+def _rating_counts_label(record: dict[str, Any]) -> str:
+    good_count = _int_value(record.get("good_count"))
+    bad_count = _int_value(record.get("bad_count"))
+    count = _int_value(record.get("count"), default=good_count + bad_count)
+    score = _int_value(record.get("score"), default=good_count - bad_count)
+    return f"{GOOD_MARKER} {good_count} / {BAD_MARKER} {bad_count}（共 {count}，分數 {score:+d}）"
+
+
+def _display_reason(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _clamp_page(page: int, total_records: int, page_size: int) -> int:
@@ -543,7 +577,40 @@ def _summary_stats(summary: dict[str, Any]) -> dict[str, Any]:
         "mixed_players": mixed_players,
         "needs_world_review_players": needs_world_review_players,
         "world_counts": _format_world_counts(summary.get("world_counts", [])),
+        "top_bad_players": _format_top_players(players, rating="bad"),
+        "top_good_players": _format_top_players(players, rating="good"),
     }
+
+
+def _format_top_players(
+    players: list[dict[str, Any]],
+    *,
+    rating: str,
+    limit: int = 5,
+) -> str:
+    count_key = "bad_count" if rating == "bad" else "good_count"
+    ranked = sorted(
+        (player for player in players if _int_value(player.get(count_key)) > 0),
+        key=lambda player: (
+            _int_value(player.get(count_key)),
+            _int_value(player.get("count")),
+            str(player.get("last_seen") or ""),
+        ),
+        reverse=True,
+    )
+    if not ranked:
+        return ""
+
+    lines: list[str] = []
+    for index, player in enumerate(ranked[:limit], start=1):
+        key = player.get("key") or player.get("name") or "未知玩家"
+        lines.append(
+            f"{index}. {key}："
+            f"{GOOD_MARKER} {_int_value(player.get('good_count'))} / "
+            f"{BAD_MARKER} {_int_value(player.get('bad_count'))}"
+            f"（分數 {_int_value(player.get('score')):+d}）"
+        )
+    return "\n".join(lines)
 
 
 def _format_world_counts(world_counts: list[dict[str, Any]]) -> str:
@@ -568,6 +635,15 @@ def _truncate(value: str, length: int) -> str:
     if len(value) <= length:
         return value
     return value[: length - 3].rstrip() + "..."
+
+
+def _int_value(value: Any, *, default: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _optional_int(value: str | None) -> int | None:

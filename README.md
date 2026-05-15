@@ -95,8 +95,8 @@ python -m ff14_raid_namelist.bot
 可用的 slash commands：
 
 - `/scan`：掃描被追蹤頻道的歷史訊息，並重建本機資料檔。
-- `/summary`：顯示目前名單摘要、好評/負評玩家數與世界分布。
-- `/recent`：用卡片與按鈕分頁顯示近期加入的名單，可篩選 `✅` 或 `❌`。
+- `/summary`：顯示目前名單摘要、好評/負評玩家數、世界分布，以及累計好評/負評較多的玩家。
+- `/recent`：用卡片與按鈕分頁顯示近期加入的名單，可篩選 `✅` 或 `❌`，並顯示每位玩家目前的累計評價次數。
 - `/unparsed`：顯示最近無法解析的評價訊息。
 
 Bot 程式會拒絕在 `DISCORD_CHANNEL_ID` 以外的頻道執行指令。若希望 slash commands 在其他頻道的指令選單中也不要出現，需要到 Discord 的 **Server Settings** -> **Integrations** 中找到這個 bot，將 commands 或 app 權限限定在名單頻道使用。
@@ -240,8 +240,8 @@ Generated data is written to:
 Available slash commands:
 
 - `/scan` scans the tracked channel history and rebuilds the local data file.
-- `/summary` shows player totals, good/bad counts, and world distribution.
-- `/recent` shows recently added records with embed pagination buttons and optional `✅`/`❌` filters.
+- `/summary` shows player totals, good/bad counts, world distribution, and top players by accumulated good/bad records.
+- `/recent` shows recently added records with embed pagination buttons, optional `✅`/`❌` filters, and each player's accumulated rating counts.
 - `/unparsed` shows recently unparsed rating messages.
 
 The bot rejects commands outside `DISCORD_CHANNEL_ID`. To also hide slash commands from other channels' command pickers, configure this bot under Discord **Server Settings** -> **Integrations** and limit the commands or app permissions to the namelist channel.
