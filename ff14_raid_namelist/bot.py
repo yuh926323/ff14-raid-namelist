@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -17,12 +18,24 @@ class BotSettings:
     output_path: Path = Path("namelist.json")
     guild_id: int | None = None
     scan_user_id: int | None = None
+    reaction_role_channel_id: int | None = None
+    reaction_role_message_id: int | None = None
+    reaction_role_map: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> "BotSettings":
         token = _clean_env_value(os.environ.get("DISCORD_BOT_TOKEN"))
         channel_id = _clean_env_value(os.environ.get("DISCORD_CHANNEL_ID"))
         scan_user_id = _clean_env_value(os.environ.get("DISCORD_SCAN_USER_ID"))
+        reaction_role_channel_id = _optional_int(
+            _clean_env_value(os.environ.get("DISCORD_REACTION_ROLE_CHANNEL_ID"))
+        )
+        reaction_role_message_id = _optional_int(
+            _clean_env_value(os.environ.get("DISCORD_REACTION_ROLE_MESSAGE_ID"))
+        )
+        reaction_role_map = _reaction_role_map_from_env(
+            _clean_env_value(os.environ.get("DISCORD_REACTION_ROLE_MAP"))
+        )
         if not token:
             raise ValueError("DISCORD_BOT_TOKEN is required")
         if _is_placeholder(token) or not _looks_like_bot_token(token):
@@ -34,6 +47,12 @@ class BotSettings:
         if not channel_id:
             raise ValueError("DISCORD_CHANNEL_ID is required")
 
+        _validate_reaction_role_settings(
+            channel_id=reaction_role_channel_id,
+            message_id=reaction_role_message_id,
+            role_map=reaction_role_map,
+        )
+
         return cls(
             token=token,
             channel_id=int(channel_id),
@@ -41,6 +60,9 @@ class BotSettings:
             output_path=Path(os.environ.get("NAMELIST_OUTPUT_PATH", "namelist.json")),
             guild_id=_optional_int(_clean_env_value(os.environ.get("DISCORD_GUILD_ID"))),
             scan_user_id=_optional_int(scan_user_id),
+            reaction_role_channel_id=reaction_role_channel_id,
+            reaction_role_message_id=reaction_role_message_id,
+            reaction_role_map=reaction_role_map,
         )
 
 
@@ -67,6 +89,7 @@ def create_bot(settings: BotSettings):
 
     intents = discord.Intents.default()
     intents.message_content = True
+    intents.reactions = True
 
     class RaidNamelistBot(commands.Bot):
         def __init__(self) -> None:
@@ -124,6 +147,85 @@ def create_bot(settings: BotSettings):
             if self.store.remove_message(message.id):
                 self.store.save()
                 self.store.write_summary(settings.output_path)
+
+        async def on_raw_reaction_add(
+            self,
+            payload: discord.RawReactionActionEvent,
+        ) -> None:
+            await self._sync_reaction_role(payload, adding=True)
+
+        async def on_raw_reaction_remove(
+            self,
+            payload: discord.RawReactionActionEvent,
+        ) -> None:
+            await self._sync_reaction_role(payload, adding=False)
+
+        async def _sync_reaction_role(
+            self,
+            payload: discord.RawReactionActionEvent,
+            *,
+            adding: bool,
+        ) -> None:
+            if not _is_reaction_role_payload(payload, settings):
+                return
+            if self.user is not None and payload.user_id == self.user.id:
+                return
+            if payload.guild_id is None:
+                return
+
+            role_id = settings.reaction_role_map.get(_reaction_role_emoji_key(payload.emoji))
+            if role_id is None:
+                return
+
+            guild = self.get_guild(payload.guild_id)
+            if guild is None:
+                print(f"reaction role skipped: guild {payload.guild_id} is not in cache")
+                return
+
+            role = guild.get_role(role_id)
+            if role is None:
+                print(f"reaction role skipped: role {role_id} was not found")
+                return
+
+            member = await self._reaction_role_member(payload, guild)
+            if member is None:
+                return
+
+            try:
+                member_roles = getattr(member, "roles", [])
+                if adding:
+                    if role not in member_roles:
+                        await member.add_roles(
+                            role,
+                            reason="Reaction role added from configured message",
+                        )
+                elif role in member_roles:
+                    await member.remove_roles(
+                        role,
+                        reason="Reaction role removed from configured message",
+                    )
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                action = "add" if adding else "remove"
+                print(f"reaction role failed to {action} role {role_id}: {exc}")
+
+        async def _reaction_role_member(
+            self,
+            payload: discord.RawReactionActionEvent,
+            guild: discord.Guild,
+        ) -> discord.Member | None:
+            member = getattr(payload, "member", None)
+            if member is not None:
+                return member
+
+            member = guild.get_member(payload.user_id)
+            if member is not None:
+                return member
+
+            try:
+                return await guild.fetch_member(payload.user_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                print(f"reaction role skipped: member {payload.user_id} was not found: {exc}")
+                return None
 
     bot = RaidNamelistBot()
 
@@ -417,6 +519,76 @@ def _has_rating_marker(content: str | None) -> bool:
         line.strip().startswith((GOOD_MARKER, BAD_MARKER))
         for line in record_content_lines(content)
     )
+
+
+def _is_reaction_role_payload(payload: Any, settings: BotSettings) -> bool:
+    return (
+        bool(settings.reaction_role_map)
+        and payload.channel_id == settings.reaction_role_channel_id
+        and payload.message_id == settings.reaction_role_message_id
+    )
+
+
+def _reaction_role_map_from_env(value: str | None) -> dict[str, int]:
+    if not value:
+        return {}
+
+    try:
+        raw_map = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "DISCORD_REACTION_ROLE_MAP must be a JSON object, "
+            'for example {"🌬️":123456789012345678}'
+        ) from exc
+
+    if not isinstance(raw_map, dict):
+        raise ValueError("DISCORD_REACTION_ROLE_MAP must be a JSON object")
+
+    role_map: dict[str, int] = {}
+    for emoji, role_id in raw_map.items():
+        if not isinstance(emoji, str) or not emoji.strip():
+            raise ValueError("DISCORD_REACTION_ROLE_MAP keys must be emoji strings")
+
+        emoji_key = _reaction_role_emoji_key(emoji)
+        if emoji_key in role_map:
+            raise ValueError(f"DISCORD_REACTION_ROLE_MAP contains duplicate emoji: {emoji}")
+
+        try:
+            role_map[emoji_key] = int(role_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "DISCORD_REACTION_ROLE_MAP values must be Discord role IDs"
+            ) from exc
+
+    return role_map
+
+
+def _validate_reaction_role_settings(
+    *,
+    channel_id: int | None,
+    message_id: int | None,
+    role_map: dict[str, int],
+) -> None:
+    if channel_id is None and message_id is None and not role_map:
+        return
+
+    missing: list[str] = []
+    if channel_id is None:
+        missing.append("DISCORD_REACTION_ROLE_CHANNEL_ID")
+    if message_id is None:
+        missing.append("DISCORD_REACTION_ROLE_MESSAGE_ID")
+    if not role_map:
+        missing.append("DISCORD_REACTION_ROLE_MAP")
+
+    if missing:
+        raise ValueError(
+            ", ".join(missing)
+            + " must be set together to enable reaction roles"
+        )
+
+
+def _reaction_role_emoji_key(value: Any) -> str:
+    return str(value).strip().replace("\ufe0f", "")
 
 
 def _recent_records(

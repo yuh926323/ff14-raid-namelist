@@ -31,8 +31,12 @@
      - View Channel
      - Read Message History
      - Send Messages
+     - Add Reactions
      - Use Application Commands
+     - Manage Roles
    - 複製產生出的 URL，開啟後把 bot 加進你的 Discord server
+   - 也可以把 `你的-application-id` 換成 Developer Portal 中的 Application ID，直接使用：
+     `https://discord.com/oauth2/authorize?client_id=你的-application-id&permissions=2415987776&scope=bot%20applications.commands`
 
 5. 取得 Discord ID：
    - Discord 使用者設定中啟用 **Developer Mode**
@@ -55,6 +59,24 @@ DISCORD_SCAN_USER_ID=你的-discord-使用者-id
 ```
 
 `DISCORD_SCAN_USER_ID` 用來限制只有指定使用者可以執行 `/scan`；如果留空，則追蹤頻道內的使用者都可以執行。建議也填 `DISCORD_GUILD_ID`，測試時 slash commands 通常會比較快出現。`.env` 已經被 `.gitignore` 排除，不會被提交。
+
+若要啟用表情身分組，先在 Discord 建立一則讓大家點表情的訊息，右鍵那則訊息複製 **Message ID**，再設定：
+
+```bash
+DISCORD_REACTION_ROLE_CHANNEL_ID=表情訊息所在頻道-id
+DISCORD_REACTION_ROLE_MESSAGE_ID=表情訊息-id
+DISCORD_REACTION_ROLE_MAP={"🌬️":身分組-id,"🐤":身分組-id}
+```
+
+內建 emoji 沒有 emoji ID，直接把 emoji 字元放在 `DISCORD_REACTION_ROLE_MAP` 的 key 即可。點表情會新增對應身分組，取消表情會移除對應身分組。Bot 的最高身分組必須在所有可發放身分組上方，否則 Discord 會拒絕發放。
+
+目前這個 Discord server 的表情身分組設定可以填：
+
+```bash
+DISCORD_REACTION_ROLE_CHANNEL_ID=1523536101250175097
+DISCORD_REACTION_ROLE_MESSAGE_ID=1523541724457078805
+DISCORD_REACTION_ROLE_MAP={"🌬️":1523536223501549618,"🐤":1523536425017016431,"✈️":1523536601915986102,"🎍":1523536663668850820,"🦵":1523536706022801480}
+```
 
 ### 用 Docker 啟動
 
@@ -178,8 +200,12 @@ If you plan to maintain the list over time, bot mode is recommended. The bot wat
      - View Channel
      - Read Message History
      - Send Messages
+     - Add Reactions
      - Use Application Commands
+     - Manage Roles
    - Open the generated URL and invite the bot to your Discord server
+   - Or replace `your-application-id` with the Application ID from the Developer Portal:
+     `https://discord.com/oauth2/authorize?client_id=your-application-id&permissions=2415987776&scope=bot%20applications.commands`
 
 5. Copy Discord IDs:
    - Enable **Developer Mode** in Discord user settings
@@ -202,6 +228,16 @@ DISCORD_SCAN_USER_ID=your-discord-user-id
 ```
 
 `DISCORD_SCAN_USER_ID` limits `/scan` to one user; leave it empty to allow anyone in the tracked channel to run it. Setting `DISCORD_GUILD_ID` is also recommended while testing because slash commands usually appear faster in a single guild. `.env` is ignored by git.
+
+To enable reaction roles, create one Discord message for users to react to, right-click that message, copy its **Message ID**, then set:
+
+```bash
+DISCORD_REACTION_ROLE_CHANNEL_ID=reaction-message-channel-id
+DISCORD_REACTION_ROLE_MESSAGE_ID=reaction-message-id
+DISCORD_REACTION_ROLE_MAP={"🌬️":role-id,"🐤":role-id}
+```
+
+Built-in emoji do not have emoji IDs; put the emoji character directly in `DISCORD_REACTION_ROLE_MAP`. Adding a reaction adds the mapped role, and removing the reaction removes it. The bot's highest role must be above every role it needs to assign.
 
 ### Run With Docker
 

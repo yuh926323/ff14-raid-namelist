@@ -10,6 +10,7 @@ from ff14_raid_namelist.bot import (
     _clamp_page_size,
     _format_recent_response,
     _has_rating_marker,
+    _reaction_role_emoji_key,
     _recent_records,
     _summary_stats,
     _total_pages,
@@ -59,6 +60,43 @@ class BotSettingsTests(unittest.TestCase):
         self.assertEqual(settings.token, VALID_FAKE_TOKEN)
         self.assertEqual(settings.channel_id, 123)
         self.assertEqual(settings.guild_id, 456)
+
+    def test_parses_reaction_role_settings(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DISCORD_BOT_TOKEN": VALID_FAKE_TOKEN,
+                "DISCORD_CHANNEL_ID": "123",
+                "DISCORD_REACTION_ROLE_CHANNEL_ID": "1523536101250175097",
+                "DISCORD_REACTION_ROLE_MESSAGE_ID": "1523541724457078805",
+                "DISCORD_REACTION_ROLE_MAP": (
+                    '{"🌬️":"1523536223501549618","🐤":1523536425017016431}'
+                ),
+            },
+            clear=True,
+        ):
+            settings = BotSettings.from_env()
+
+        self.assertEqual(settings.reaction_role_channel_id, 1523536101250175097)
+        self.assertEqual(settings.reaction_role_message_id, 1523541724457078805)
+        self.assertEqual(
+            settings.reaction_role_map[_reaction_role_emoji_key("🌬")],
+            1523536223501549618,
+        )
+        self.assertEqual(settings.reaction_role_map["🐤"], 1523536425017016431)
+
+    def test_requires_complete_reaction_role_settings(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DISCORD_BOT_TOKEN": VALID_FAKE_TOKEN,
+                "DISCORD_CHANNEL_ID": "123",
+                "DISCORD_REACTION_ROLE_MAP": '{"🌬️":1523536223501549618}',
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "DISCORD_REACTION_ROLE_CHANNEL_ID"):
+                BotSettings.from_env()
 
 
 class BotRecentCommandTests(unittest.TestCase):
